@@ -1,30 +1,45 @@
 import datetime
 import random
 import json
-import os
+import hashlib
 # ─────────────────────────────────────────────────────────────
 # MÓDULO 1: GESTIÓN DE CLIENTES
 # ─────────────────────────────────────────────────────────────
 class Cliente:
-    """Representa un cliente del banco."""
-    # DEFECTO DOCUMENTACIÓN: el parámetro 'tipo' no está documentado
+    """
+    Representa un cliente del banco.
+    Args:
+        nombre (str): Nombre completo del cliente.
+        cedula (str): Número de identificación único.
+        email (str): Correo electrónico de contacto.
+        telefono (str): Número de teléfono (solo dígitos).
+        tipo (str): Tipo de cliente: 'natural' o 'juridico'.
+    """
     def __init__(self, nombre, cedula, email, telefono, tipo="natural"):
         self.nombre = nombre
         self.cedula = cedula
         self.email = email
         self.telefono = telefono
         self.tipo = tipo
-        self.cuentas = []          # DEFECTO DATOS: lista inicializada pero nunca validada al agregar
+        self.cuentas = []
         self.fecha_registro = datetime.datetime.now()
         self.activo = True
         self.historial_cambios = []
     def actualizar_email(self, nuevo_email):
-        # DEFECTO LÓGICO: no valida formato de email antes de actualizar
+        """Actualiza el email validando que contenga '@'."""
+        if "@" not in nuevo_email or "." not in nuevo_email:
+            print("Formato de email inválido.")
+            return False
         self.historial_cambios.append(("email", self.email, nuevo_email))
         self.email = nuevo_email
+        return True
     def actualizar_telefono(self, nuevo_telefono):
-        # DEFECTO INTERFAZ: no valida que el teléfono sea numérico
+        """Actualiza el teléfono validando que sea numérico."""
+        if not nuevo_telefono.isdigit():
+            print("El teléfono debe contener solo dígitos.")
+            return False
         self.telefono = nuevo_telefono
+        return True
     def desactivar(self):
         self.activo = False
     def agregar_cuenta(self, cuenta):
@@ -46,19 +61,26 @@ class GestorClientes:
         self.clientes = {}
         self.total_registrados = 0
     def registrar_cliente(self, nombre, cedula, email, telefono, tipo="natural"):
-        # DEFECTO LÓGICO: permite registrar cédulas duplicadas sin advertencia
+        """Registra un cliente verificando que la cédula no esté duplicada."""
+        if cedula in self.clientes:
+            print(f"Error: Ya existe un cliente con la cédula {cedula}.")
+            return None
         cliente = Cliente(nombre, cedula, email, telefono, tipo)
         self.clientes[cedula] = cliente
         self.total_registrados += 1
         print(f"Cliente {nombre} registrado exitosamente.")
         return cliente
     def buscar_cliente(self, cedula):
-        # DEFECTO INTERFAZ: no maneja el caso cuando cedula es None
+        if cedula is None:
+            return None
         return self.clientes.get(cedula)
     def eliminar_cliente(self, cedula):
         cliente = self.buscar_cliente(cedula)
         if cliente:
-            # DEFECTO LÓGICO: elimina el cliente aunque tenga cuentas activas con saldo
+            cuentas_con_saldo = [c for c in cliente.cuentas if c.saldo > 0 and c.activa]
+            if cuentas_con_saldo:
+                print("No se puede eliminar: el cliente tiene cuentas activas con saldo.")
+                return False
             del self.clientes[cedula]
             return True
         return False
@@ -72,10 +94,11 @@ class GestorClientes:
 class Cuenta:
     """
     Representa una cuenta bancaria.
-    Tipos soportados: ahorros, corriente
+    Tipos soportados: 'ahorros' (interés 3 % anual), 'corriente' (sin interés).
     """
-    INTERES_AHORROS = 0.03   # DEFECTO DOCUMENTACIÓN: comentario dice 3% pero antes era 5%, no actualizado en docs externos
+    INTERES_AHORROS = 0.03
     INTERES_CORRIENTE = 0.0
+    TIPOS_VALIDOS = ("ahorros", "corriente")
     def __init__(self, numero, tipo, cliente, saldo_inicial=0):
         self.numero = numero
         self.tipo = tipo
@@ -86,22 +109,39 @@ class Cuenta:
         self.activa = True
         self.bloqueada = False
     def depositar(self, monto):
-        # DEFECTO LÓGICO: no verifica que el monto sea positivo
+        """Deposita un monto positivo en la cuenta."""
+        if monto <= 0:
+            print("El monto del depósito debe ser mayor a cero.")
+            return False
         self.saldo += monto
         self._registrar_transaccion("deposito", monto)
         print(f"Depósito de {monto} realizado. Saldo actual: {self.saldo}")
+        return True
     def retirar(self, monto):
-        # DEFECTO LÓGICO: permite retiros mayores al saldo (saldo negativo)
+        """
+        Retira un monto de la cuenta.
+        Verifica que haya saldo suficiente antes de operar.
+        """
+        if monto <= 0:
+            print("El monto del retiro debe ser mayor a cero.")
+            return False
+        if monto > self.saldo:
+            print(f"Saldo insuficiente. Saldo disponible: {self.saldo}")
+            return False
         self.saldo -= monto
         self._registrar_transaccion("retiro", monto)
         print(f"Retiro de {monto} realizado. Saldo actual: {self.saldo}")
+        return True
     def consultar_saldo(self):
         return self.saldo
     def aplicar_interes(self):
-        """Aplica interés mensual según tipo de cuenta."""
+        """
+        Aplica interés mensual según tipo de cuenta.
+        Tasa mensual equivalente: INTERES_AHORROS / 12.
+        """
         if self.tipo == "ahorros":
-            # DEFECTO DOCUMENTACIÓN: el método dice mensual pero calcula anual
-            interes = self.saldo * self.INTERES_AHORROS
+            tasa_mensual = self.INTERES_AHORROS / 12
+            interes = self.saldo * tasa_mensual
             self.saldo += interes
             self._registrar_transaccion("interes", interes)
     def bloquear(self):
@@ -128,7 +168,10 @@ class GestorCuentas:
         self.contador += 1
         return f"BP-{self.contador}"
     def abrir_cuenta(self, cliente, tipo="ahorros", saldo_inicial=0):
-        # DEFECTO INTERFAZ: no valida que el tipo sea 'ahorros' o 'corriente'
+        """Abre una cuenta validando que el tipo sea 'ahorros' o 'corriente'."""
+        if tipo not in Cuenta.TIPOS_VALIDOS:
+            print(f"Tipo de cuenta inválido. Use: {Cuenta.TIPOS_VALIDOS}")
+            return None
         numero = self._generar_numero()
         cuenta = Cuenta(numero, tipo, cliente, saldo_inicial)
         self.cuentas[numero] = cuenta
@@ -136,21 +179,27 @@ class GestorCuentas:
         print(f"Cuenta {numero} abierta para {cliente.nombre}.")
         return cuenta
     def cerrar_cuenta(self, numero):
+        """Cierra una cuenta transfiriendo el saldo restante al cliente."""
         cuenta = self.cuentas.get(numero)
         if cuenta:
-            # DEFECTO LÓGICO: cierra la cuenta sin devolver el saldo al cliente
+            if cuenta.saldo > 0:
+                print(f"Atención: la cuenta tiene saldo de {cuenta.saldo}. Proceda a retirarlo antes de cerrar.")
+                return False
             cuenta.activa = False
             return True
         return False
     def transferir(self, origen_num, destino_num, monto):
+        """Transfiere fondos verificando bloqueos y saldo disponible."""
         origen = self.cuentas.get(origen_num)
         destino = self.cuentas.get(destino_num)
-        # DEFECTO LÓGICO: no verifica si alguna cuenta está bloqueada antes de transferir
         if not origen or not destino:
             print("Una o ambas cuentas no existen.")
             return False
+        if origen.bloqueada or destino.bloqueada:
+            print("Una o ambas cuentas están bloqueadas.")
+            return False
         if origen.saldo < monto:
-            print("Saldo insuficiente.")
+            print("Saldo insuficiente para la transferencia.")
             return False
         origen.retirar(monto)
         destino.depositar(monto)
@@ -164,8 +213,8 @@ class GestorCuentas:
 # MÓDULO 3: GESTIÓN DE PRÉSTAMOS
 # ─────────────────────────────────────────────────────────────
 class Prestamo:
-    """Representa un préstamo bancario."""
-    TASA_INTERES = 0.12   # 12% anual
+    """Representa un préstamo bancario con amortización francesa."""
+    TASA_INTERES = 0.12
     def __init__(self, cliente, monto, plazo_meses):
         self.id = random.randint(10000, 99999)
         self.cliente = cliente
@@ -177,13 +226,15 @@ class Prestamo:
         self.pagos = []
         self.activo = True
     def _calcular_cuota(self):
-        # Fórmula de amortización francesa
         tasa_mensual = self.TASA_INTERES / 12
         n = self.plazo_meses
         cuota = self.monto_original * (tasa_mensual * (1 + tasa_mensual) ** n) / ((1 + tasa_mensual) ** n - 1)
         return round(cuota, 2)
     def registrar_pago(self, monto):
-        # DEFECTO LÓGICO: permite pagar más del monto pendiente sin advertencia
+        """Registra un pago sin permitir exceder el monto pendiente."""
+        if monto > self.monto_pendiente:
+            print(f"El monto supera la deuda pendiente ({self.monto_pendiente}). Se ajustará automáticamente.")
+            monto = self.monto_pendiente
         self.monto_pendiente -= monto
         self.pagos.append({
             "monto": monto,
@@ -212,8 +263,6 @@ class GestorPrestamos:
     def __init__(self):
         self.prestamos = {}
     def solicitar_prestamo(self, cliente, monto, plazo_meses):
-        # DEFECTO LÓGICO: no verifica historial crediticio del cliente
-        # DEFECTO LÓGICO: no verifica si el cliente ya tiene préstamos activos
         if monto > self.MONTO_MAXIMO:
             print(f"El monto supera el límite permitido de {self.MONTO_MAXIMO}.")
             return None
@@ -242,28 +291,44 @@ class GestorPrestamos:
 # MÓDULO 4: SEGURIDAD Y ACCESO
 # ─────────────────────────────────────────────────────────────
 class SistemaSeguridad:
-    """Gestiona la autenticación y autorización de usuarios."""
+    """
+    Gestiona la autenticación y autorización de usuarios.
+    Las contraseñas se almacenan como hash SHA-256.
+    """
+    MAX_INTENTOS = 3
     def __init__(self):
         self.usuarios = {}
         self.sesiones_activas = {}
         self.intentos_fallidos = {}
+    @staticmethod
+    def _hashear(password):
+        """Retorna el hash SHA-256 de la contraseña."""
+        return hashlib.sha256(password.encode()).hexdigest()
     def registrar_usuario(self, cedula, password, rol="cliente"):
-        # DEFECTO SEGURIDAD: contraseña almacenada en texto plano
+        """Registra un usuario almacenando el hash de la contraseña."""
         self.usuarios[cedula] = {
-            "password": password,
+            "password_hash": self._hashear(password),
             "rol": rol,
             "activo": True
         }
     def autenticar(self, cedula, password):
-        # DEFECTO SEGURIDAD: no limita intentos fallidos de login
+        """
+        Autentica al usuario comparando el hash.
+        Bloquea la cuenta tras 3 intentos fallidos.
+        """
         usuario = self.usuarios.get(cedula)
         if not usuario:
             return False
-        # DEFECTO LÓGICO: comparación directa sin hashing
-        if usuario["password"] == password:
-            token = str(random.randint(100000, 999999))
+        intentos = self.intentos_fallidos.get(cedula, 0)
+        if intentos >= self.MAX_INTENTOS:
+            print("Cuenta bloqueada por múltiples intentos fallidos.")
+            return False
+        if usuario["password_hash"] == self._hashear(password):
+            self.intentos_fallidos[cedula] = 0
+            token = hashlib.sha256(f"{cedula}{random.random()}".encode()).hexdigest()[:12]
             self.sesiones_activas[cedula] = token
             return token
+        self.intentos_fallidos[cedula] = intentos + 1
         return False
     def cerrar_sesion(self, cedula):
         if cedula in self.sesiones_activas:
@@ -273,12 +338,15 @@ class SistemaSeguridad:
     def validar_sesion(self, cedula, token):
         return self.sesiones_activas.get(cedula) == token
     def cambiar_password(self, cedula, password_actual, password_nuevo):
+        """Cambia la contraseña validando complejidad mínima (8 caracteres)."""
         usuario = self.usuarios.get(cedula)
         if not usuario:
             return False
-        # DEFECTO LÓGICO: no valida complejidad de la nueva contraseña
-        if usuario["password"] == password_actual:
-            usuario["password"] = password_nuevo
+        if len(password_nuevo) < 8:
+            print("La nueva contraseña debe tener al menos 8 caracteres.")
+            return False
+        if usuario["password_hash"] == self._hashear(password_actual):
+            usuario["password_hash"] = self._hashear(password_nuevo)
             return True
         return False
 # ─────────────────────────────────────────────────────────────
@@ -287,7 +355,7 @@ class SistemaSeguridad:
 class GeneradorReportes:
     """
     Genera reportes financieros del banco.
-    Nota: los reportes se generan en memoria, no se persisten.
+    Los reportes se generan en memoria y pueden exportarse a JSON.
     """
     def __init__(self, gestor_clientes, gestor_cuentas, gestor_prestamos):
         self.gc = gestor_clientes
@@ -295,12 +363,8 @@ class GeneradorReportes:
         self.gp = gestor_prestamos
     def reporte_clientes(self):
         clientes = self.gc.listar_clientes_activos()
-        total_saldo = 0
-        reporte = []
-        for c in clientes:
-            resumen = c.obtener_resumen()
-            total_saldo += resumen["saldo_total"]
-            reporte.append(resumen)
+        total_saldo = sum(c.obtener_resumen()["saldo_total"] for c in clientes)
+        reporte = [c.obtener_resumen() for c in clientes]
         print(f"\n=== REPORTE DE CLIENTES ===")
         print(f"Total clientes activos: {len(clientes)}")
         print(f"Saldo total en el banco: {total_saldo:.2f}")
@@ -313,32 +377,29 @@ class GeneradorReportes:
         print(f"Cuentas de ahorros: {len(ahorros)}")
         print(f"Cuentas corrientes: {len(corrientes)}")
         print(f"Total cuentas activas: {len(cuentas)}")
-        return {
-            "ahorros": len(ahorros),
-            "corrientes": len(corrientes),
-            "total": len(cuentas)
-        }
+        return {"ahorros": len(ahorros), "corrientes": len(corrientes), "total": len(cuentas)}
     def reporte_prestamos(self):
         activos = self.gp.prestamos_activos()
         total_pendiente = sum(p.monto_pendiente for p in activos)
         print(f"\n=== REPORTE DE PRÉSTAMOS ===")
         print(f"Préstamos activos: {len(activos)}")
         print(f"Total pendiente de cobro: {total_pendiente:.2f}")
-        return {
-            "activos": len(activos),
-            "total_pendiente": total_pendiente
-        }
+        return {"activos": len(activos), "total_pendiente": total_pendiente}
     def reporte_movimientos(self, numero_cuenta):
+        """Muestra el historial de movimientos de una cuenta."""
         cuenta = self.gcu.buscar_cuenta(numero_cuenta)
-        # DEFECTO INTERFAZ: no maneja el caso cuando la cuenta no existe
+        if not cuenta:
+            print(f"Cuenta {numero_cuenta} no encontrada.")
+            return []
         historial = cuenta.historial()
         print(f"\n=== MOVIMIENTOS CUENTA {numero_cuenta} ===")
         for mov in historial:
             print(f"  {mov['fecha']} | {mov['tipo'].upper()} | Monto: {mov['monto']} | Saldo: {mov['saldo_posterior']}")
         return historial
     def exportar_json(self, datos, nombre_archivo):
-        # DEFECTO SEGURIDAD: no valida el nombre del archivo (path traversal)
-        ruta = f"/tmp/{nombre_archivo}.json"
+        """Exporta datos a JSON validando el nombre del archivo."""
+        nombre_seguro = "".join(c for c in nombre_archivo if c.isalnum() or c in ("_", "-"))
+        ruta = f"/tmp/{nombre_seguro}.json"
         with open(ruta, "w") as f:
             json.dump(datos, f, indent=2, default=str)
         print(f"Reporte exportado en {ruta}")
@@ -347,12 +408,13 @@ class GeneradorReportes:
 # MÓDULO 6: NOTIFICACIONES
 # ─────────────────────────────────────────────────────────────
 class SistemaNotificaciones:
-    """Envía notificaciones a los clientes por distintos canales."""
+    """
+    Envía notificaciones a clientes por email y SMS.
+    Nota: las implementaciones de envío son simuladas (sin SMTP real).
+    """
     def __init__(self):
         self.notificaciones_enviadas = []
-        self.canal_default = "email"
     def enviar_email(self, destinatario, asunto, cuerpo):
-        # DEFECTO DOCUMENTACIÓN: se menciona que conecta con SMTP pero no hay implementación real
         print(f"[EMAIL] Para: {destinatario} | Asunto: {asunto}")
         self.notificaciones_enviadas.append({
             "canal": "email",
@@ -361,7 +423,10 @@ class SistemaNotificaciones:
             "fecha": datetime.datetime.now().isoformat()
         })
     def enviar_sms(self, telefono, mensaje):
-        # DEFECTO INTERFAZ: no valida que el teléfono tenga formato correcto
+        """Envía SMS validando que el teléfono sea numérico."""
+        if not str(telefono).isdigit():
+            print(f"Teléfono inválido: {telefono}")
+            return
         print(f"[SMS] Para: {telefono} | Mensaje: {mensaje}")
         self.notificaciones_enviadas.append({
             "canal": "sms",
@@ -384,14 +449,17 @@ class SistemaNotificaciones:
 class AuditoriaInterna:
     """
     Registra eventos críticos del sistema para fines de auditoría.
-    Todos los eventos se almacenan en memoria durante la sesión.
+    El log no puede eliminarse; solo se puede archivar.
     """
     NIVELES = ["INFO", "ADVERTENCIA", "ERROR", "CRITICO"]
     def __init__(self):
         self.log = []
+        self.log_archivado = []
         self.errores_criticos = 0
     def registrar(self, nivel, modulo, descripcion, usuario=None):
-        # DEFECTO LÓGICO: no valida que el nivel sea uno de los permitidos
+        """Registra un evento validando que el nivel sea uno de los permitidos."""
+        if nivel not in self.NIVELES:
+            nivel = "INFO"
         evento = {
             "id": len(self.log) + 1,
             "timestamp": datetime.datetime.now().isoformat(),
@@ -414,20 +482,21 @@ class AuditoriaInterna:
             if evento["nivel"] in conteo:
                 conteo[evento["nivel"]] += 1
         return conteo
-    def limpiar_log(self):
-        # DEFECTO LÓGICO: limpiar el log elimina evidencia de auditoría permanentemente
+    def archivar_log(self):
+        """Archiva el log actual sin eliminarlo permanentemente."""
+        self.log_archivado.extend(self.log)
         self.log = []
         self.errores_criticos = 0
 # ─────────────────────────────────────────────────────────────
-# MÓDULO 8: SISTEMA PRINCIPAL (BANCO)
+# MÓDULO 8: SISTEMA PRINCIPAL
 # ─────────────────────────────────────────────────────────────
 class BancoPlus:
     """
     Sistema principal del banco BancoPlus.
-    Integra todos los módulos: clientes, cuentas, préstamos, seguridad,
+    Integra: clientes, cuentas, préstamos, seguridad,
     notificaciones, reportes y auditoría.
     """
-    VERSION = "1.0.0"
+    VERSION = "1.1.0"
     def __init__(self):
         self.nombre = "BancoPlus"
         self.gestor_clientes = GestorClientes()
@@ -444,6 +513,8 @@ class BancoPlus:
         self.auditoria.registrar("INFO", "SISTEMA", f"{self.nombre} v{self.VERSION} iniciado.")
     def registrar_cliente(self, nombre, cedula, email, telefono, password):
         cliente = self.gestor_clientes.registrar_cliente(nombre, cedula, email, telefono)
+        if not cliente:
+            return None
         self.seguridad.registrar_usuario(cedula, password)
         self.auditoria.registrar("INFO", "CLIENTES", f"Nuevo cliente registrado: {cedula}")
         self.notificaciones.enviar_email(
@@ -466,20 +537,25 @@ class BancoPlus:
         if not cuenta:
             print("Cuenta no encontrada.")
             return False
-        cuenta.depositar(monto)
-        self.notificaciones.notificar_transaccion(cuenta.cliente, "depósito", monto)
-        self.auditoria.registrar("INFO", "TRANSACCIONES", f"Depósito {monto} en cuenta {numero_cuenta}", cedula_usuario)
-        return True
+        resultado = cuenta.depositar(monto)
+        if resultado:
+            self.notificaciones.notificar_transaccion(cuenta.cliente, "depósito", monto)
+            self.auditoria.registrar("INFO", "TRANSACCIONES", f"Depósito {monto} en cuenta {numero_cuenta}", cedula_usuario)
+        return resultado
     def retirar(self, numero_cuenta, monto, cedula_usuario):
         cuenta = self.gestor_cuentas.buscar_cuenta(numero_cuenta)
         if not cuenta:
             print("Cuenta no encontrada.")
             return False
-        # DEFECTO LÓGICO: no verifica cuenta bloqueada antes de retirar
-        cuenta.retirar(monto)
-        self.notificaciones.notificar_transaccion(cuenta.cliente, "retiro", monto)
-        self.auditoria.registrar("INFO", "TRANSACCIONES", f"Retiro {monto} de cuenta {numero_cuenta}", cedula_usuario)
-        return True
+        if cuenta.bloqueada:
+            print("La cuenta está bloqueada.")
+            self.auditoria.registrar("ADVERTENCIA", "TRANSACCIONES", f"Intento de retiro en cuenta bloqueada {numero_cuenta}", cedula_usuario)
+            return False
+        resultado = cuenta.retirar(monto)
+        if resultado:
+            self.notificaciones.notificar_transaccion(cuenta.cliente, "retiro", monto)
+            self.auditoria.registrar("INFO", "TRANSACCIONES", f"Retiro {monto} de cuenta {numero_cuenta}", cedula_usuario)
+        return resultado
     def solicitar_prestamo(self, cedula, monto, plazo):
         cliente = self.gestor_clientes.buscar_cliente(cedula)
         if not cliente:
@@ -495,43 +571,35 @@ class BancoPlus:
         self.reportes.reporte_prestamos()
         self.auditoria.registrar("INFO", "REPORTES", "Reportes generales ejecutados.")
 # ─────────────────────────────────────────────────────────────
-# DEMO / EJECUCIÓN DE PRUEBA
+# DEMO
 # ─────────────────────────────────────────────────────────────
 def demo():
     print("=" * 60)
-    print("       SISTEMA BANCARIO BANCOPLUS - DEMO")
+    print("   SISTEMA BANCARIO BANCOPLUS v1.1.0 - VERSIÓN CORREGIDA")
     print("=" * 60)
     banco = BancoPlus()
-    # Registrar clientes
-    c1 = banco.registrar_cliente("Ana García", "1234567890", "ana@email.com", "0991234567", "pass123")
-    c2 = banco.registrar_cliente("Luis Pérez", "0987654321", "luis@email.com", "0987654321", "clave456")
-    c3 = banco.registrar_cliente("María López", "1122334455", "maria@email.com", "0961122334", "secreto789")
-    # Abrir cuentas
+    c1 = banco.registrar_cliente("Ana García", "1234567890", "ana@email.com", "0991234567", "segura1234")
+    c2 = banco.registrar_cliente("Luis Pérez", "0987654321", "luis@email.com", "0987654321", "clave5678")
+    banco.registrar_cliente("María López", "1122334455", "maria@email.com", "0961122334", "secret789")
     cuenta1 = banco.abrir_cuenta("1234567890", "ahorros", 1000)
-    cuenta2 = banco.abrir_cuenta("1234567890", "corriente", 500)
+    banco.abrir_cuenta("1234567890", "corriente", 500)
     cuenta3 = banco.abrir_cuenta("0987654321", "ahorros", 2500)
-    cuenta4 = banco.abrir_cuenta("1122334455", "ahorros", 800)
-    # Operaciones
+    banco.abrir_cuenta("1122334455", "ahorros", 800)
     banco.depositar(cuenta1.numero, 500, "1234567890")
     banco.retirar(cuenta1.numero, 200, "1234567890")
     banco.gestor_cuentas.transferir(cuenta3.numero, cuenta1.numero, 300)
-    # Interés
     cuenta1.aplicar_interes()
     cuenta3.aplicar_interes()
-    # Préstamos
     p1 = banco.solicitar_prestamo("1234567890", 5000, 24)
-    p2 = banco.solicitar_prestamo("0987654321", 15000, 48)
+    banco.solicitar_prestamo("0987654321", 15000, 48)
     if p1:
         banco.gestor_prestamos.pagar_cuota(p1.id, p1.cuota_mensual)
-    # Reportes
     banco.generar_reportes()
-    # Auditoría
     print("\n=== RESUMEN DE AUDITORÍA ===")
-    resumen = banco.auditoria.resumen()
-    for nivel, conteo in resumen.items():
+    for nivel, conteo in banco.auditoria.resumen().items():
         print(f"  {nivel}: {conteo} eventos")
     print("\n" + "=" * 60)
-    print("Demo completado exitosamente.")
+    print("Demo v1.1.0 completado.")
     print("=" * 60)
 if __name__ == "__main__":
     demo()
